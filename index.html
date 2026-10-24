@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Attrape la cible</title>
+<meta name="theme-color" content="#dcebfa">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  /* CSS = l’apparence. Les couleurs sont rangées dans des variables (--nom) */
+  :root {
+    --bg: #dcebfa; --area: #eef5fc; --ink: #12263f; --target: #ffc83d;
+    color-scheme: light;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f2036; --area: #173050; --ink: #e6f0fb; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f2036; --area: #173050; --ink: #e6f0fb; color-scheme: dark;
+  }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 20px 16px 28px;
+  }
+  header { display: flex; justify-content: space-between; align-items: baseline; max-width: 520px; margin: 0 auto 14px; }
+  h1 { font-size: 1.25rem; margin: 0; }
+  .score { font-size: 2rem; font-weight: 700; }
+  .infos { display: flex; gap: 16px; align-items: baseline; }
+  .chrono { font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+  #fin {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 16px;
+    background: var(--area); text-align: center; font-size: 1.4rem; font-weight: 700;
+  }
+  #fin[hidden] { display: none; }
+  #rejouer {
+    font: inherit; font-size: 1rem; padding: 12px 24px; border-radius: 999px;
+    border: 3px solid var(--ink); background: var(--target); color: #12263f; cursor: pointer;
+  }
+  #rejouer:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+  #zone {
+    position: relative; max-width: 520px; height: 60vh; margin: 0 auto;
+    background: var(--area); border-radius: 18px; overflow: hidden;
+  }
+  #cible {
+    position: absolute; width: 68px; height: 68px; border-radius: 50%;
+    border: 4px solid var(--ink); background: var(--target);
+    transform: translate(-50%, -50%); cursor: pointer; padding: 0;
+  }
+  #cible:active { transform: translate(-50%, -50%) scale(0.9); }
+  #cible:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+  p { max-width: 520px; margin: 14px auto 0; text-align: center; }
+</style>
+</head>
+<body>
+
+<!-- HTML = la structure : ce qu’il y a sur la page -->
+<header>
+  <h1>Attrape la cible</h1>
+  <div class="infos">
+    <div class="score"><span id="score">0</span> pts</div>
+    <div class="chrono"><span id="temps">20</span> s</div>
+  </div>
+</header>
+
+<div id="zone">
+  <button id="cible" aria-label="Cible à toucher"></button>
+  <div id="fin" hidden>
+    <div id="resultat"></div>
+    <button id="rejouer">Rejouer</button>
+  </div>
+</div>
+
+<p>Touche la cible autant de fois que possible en 20 secondes. Elle rétrécit à chaque point.</p>
+<p id="record">Record : 0 pts</p>
+
+<script>
+  // JavaScript = le comportement : ce qui se passe quand on joue
+  let score = 0;                                   // le score de départ
+  const cible = document.getElementById('cible');  // on récupère la cible
+  const affichage = document.getElementById('score');
+  const affichageTemps = document.getElementById('temps');
+  const fin = document.getElementById('fin');
+  const resultat = document.getElementById('resultat');
+  let temps = 20;       // secondes restantes
+  let enCours = false;  // la partie a-t-elle commencé ?
+  let chrono;           // le minuteur
+  let taille = 68;      // taille de la cible, en pixels
+  let record = 0;       // meilleur score
+  const affichageRecord = document.getElementById('record');
+
+  // Le record est gardé dans le navigateur (localStorage), même si on ferme la page
+  try { record = Number(localStorage.getItem('record-cible')) || 0; } catch (e) { }
+
+  function afficherRecord() {
+    affichageRecord.textContent = 'Record : ' + record + ' pts';
+  }
+
+  // Change la taille de la cible (jamais en dessous de 30 px)
+  function changerTaille(nouvelle) {
+    taille = Math.max(30, nouvelle);
+    cible.style.width = taille + 'px';
+    cible.style.height = taille + 'px';
+  }
+
+  // Place la cible à un endroit au hasard (en % de la zone de jeu)
+  function deplacer() {
+    cible.style.left = (Math.random() * 80 + 10) + '%';
+    cible.style.top  = (Math.random() * 80 + 10) + '%';
+  }
+
+  // Lance le minuteur : toutes les 1000 ms (1 seconde), on enlève 1 au temps
+  function demarrer() {
+    chrono = setInterval(function () {
+      temps = temps - 1;
+      affichageTemps.textContent = temps;
+      if (temps === 0) { terminer(); }   // si le temps arrive à 0, la partie s’arrête
+    }, 1000);
+  }
+
+  // Fin de partie : on arrête le minuteur et on affiche le résultat
+  function terminer() {
+    clearInterval(chrono);
+    enCours = false;
+    cible.disabled = true;
+    let message = 'Temps écoulé : ' + score + ' pts';
+    if (score > record) {                 // si on bat le record...
+      record = score;
+      try { localStorage.setItem('record-cible', record); } catch (e) { }
+      afficherRecord();
+      message = 'Nouveau record : ' + score + ' pts !';
+    }
+    resultat.textContent = message;
+    fin.hidden = false;
+  }
+
+  // Rejouer : on remet tout à zéro
+  function rejouer() {
+    score = 0;
+    temps = 20;
+    affichage.textContent = score;
+    affichageTemps.textContent = temps;
+    cible.disabled = false;
+    fin.hidden = true;
+    changerTaille(68);
+    deplacer();
+  }
+
+  // Quand on touche la cible : le chrono démarre au premier toucher, +1 point, puis elle bouge
+  cible.addEventListener('click', function () {
+    if (!enCours) { enCours = true; demarrer(); }
+    score = score + 1;
+    changerTaille(taille - 2);
+    affichage.textContent = score;
+    deplacer();
+  });
+
+  document.getElementById('rejouer').addEventListener('click', rejouer);
+
+  afficherRecord(); // on affiche le record enregistré
+  deplacer(); // première position au chargement de la page
+</script>
+
+<script>
+  // Mode hors-ligne : on enregistre le service worker (fichier sw.js)
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').catch(function () { });
+    });
+  }
+</script>
+</body>
+</html>
